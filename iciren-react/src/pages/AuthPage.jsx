@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
+import { Turnstile } from '@marsidev/react-turnstile';
+
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
 
 export default function AuthPage() {
   const [searchParams] = useSearchParams();
@@ -18,6 +21,7 @@ export default function AuthPage() {
   
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState(null);
 
   useEffect(() => {
     if (user) navigate('/explore');
@@ -25,8 +29,12 @@ export default function AuthPage() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    if (!captchaToken) {
+      toast.error('Mohon selesaikan captcha!');
+      return;
+    }
     try {
-      const { error } = await signIn(email, password);
+      const { error } = await signIn(email, password, captchaToken);
       if (error) throw error;
       toast.success('Login berhasil!');
       navigate('/explore');
@@ -37,12 +45,16 @@ export default function AuthPage() {
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    if (!captchaToken) {
+      toast.error('Mohon selesaikan captcha!');
+      return;
+    }
     if (password !== confirmPassword) {
       toast.error('Password tidak cocok!');
       return;
     }
     try {
-      const { error } = await signUp(email, password, name);
+      const { error } = await signUp(email, password, name, captchaToken);
       if (error) throw error;
       toast.success('Pendaftaran berhasil! Silakan cek email kamu untuk verifikasi sebelum login.');
       setActiveTab('login');
@@ -84,6 +96,9 @@ export default function AuthPage() {
                   <button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)}><i className="fas fa-eye"></i></button>
                 </div>
               </div>
+              <div style={{ marginBottom: '15px' }}>
+                <Turnstile siteKey={TURNSTILE_SITE_KEY} onSuccess={setCaptchaToken} />
+              </div>
               <button type="submit" className="btn btn-primary auth-submit-btn"><i className="fas fa-sign-in-alt"></i> Masuk Sekarang</button>
               <p className="auth-switch">Belum punya akun? <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('register'); }}>Daftar sekarang</a></p>
             </form>
@@ -117,6 +132,9 @@ export default function AuthPage() {
                   <input type="checkbox" required />
                   <span>Saya setuju dengan <a href="#" className="auth-link">Syarat &amp; Ketentuan</a> serta <a href="#" className="auth-link">Kebijakan Privasi</a></span>
                 </label>
+              </div>
+              <div style={{ marginBottom: '15px' }}>
+                <Turnstile siteKey={TURNSTILE_SITE_KEY} onSuccess={setCaptchaToken} />
               </div>
               <button type="submit" className="btn btn-primary auth-submit-btn"><i className="fas fa-user-plus"></i> Daftar Sekarang</button>
               <p className="auth-switch">Sudah punya akun? <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('login'); }}>Masuk di sini</a></p>

@@ -119,6 +119,7 @@ export function resetAuthForms() {
   const registerForm = document.getElementById('registerForm')
   if (loginForm) loginForm.reset()
   if (registerForm) registerForm.reset()
+  if (window.turnstile) window.turnstile.reset()
   switchAuthTab('login')
 }
 
@@ -139,6 +140,7 @@ export async function handleLogin(e) {
     showToast('❌ Mohon selesaikan Captcha terlebih dahulu.')
     return
   }
+  const captchaToken = token
 
   submitBtn.disabled = true
   submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...'
@@ -159,7 +161,11 @@ export async function handleLogin(e) {
     }
 
     if (supabaseClient) {
-      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ 
+        email, 
+        password,
+        options: { captchaToken }
+      })
       if (error) throw error
       currentUser = {
         id: data.user.id,
@@ -184,6 +190,7 @@ export async function handleLogin(e) {
   } finally {
     submitBtn.disabled = false
     submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Masuk Sekarang'
+    if (window.turnstile) window.turnstile.reset()
   }
 }
 
@@ -219,6 +226,7 @@ export async function handleRegister(e) {
     showToast('❌ Mohon selesaikan Captcha terlebih dahulu.')
     return
   }
+  const captchaToken = token
 
   submitBtn.disabled = true
   submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...'
@@ -241,7 +249,10 @@ export async function handleRegister(e) {
     if (supabaseClient) {
       const { data, error } = await supabaseClient.auth.signUp({
         email, password,
-        options: { data: { name } }
+        options: { 
+          data: { name },
+          captchaToken
+        }
       })
       if (error) throw error
       showEmailVerifyModal(email)
@@ -265,6 +276,7 @@ export async function handleRegister(e) {
   } finally {
     submitBtn.disabled = false
     submitBtn.innerHTML = '<i class="fas fa-user-plus"></i> Daftar Sekarang'
+    if (window.turnstile) window.turnstile.reset()
   }
 }
 
