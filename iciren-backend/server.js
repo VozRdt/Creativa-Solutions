@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 
 import paymentRoutes from './src/routes/paymentRoutes.js';
 import webhookRoutes from './src/routes/webhookRoutes.js';
+import turnstileRoutes from './src/routes/turnstileRoutes.js';
 
 dotenv.config();
 
@@ -22,6 +23,8 @@ app.get('/api/health', (req, res) => {
 // API Routes
 app.use('/api/payment', paymentRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/turnstile', turnstileRoutes);
+
 
 // Export app for Vercel serverless functions
 export default app;

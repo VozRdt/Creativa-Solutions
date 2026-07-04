@@ -13,6 +13,30 @@ export let currentUser = JSON.parse(localStorage.getItem('iciren_user') || 'null
 
 export const PROTECTED_PAGES = ['sell', 'explore', 'myideas', 'profile', 'admin']
 
+// ─── CLOUDFLARE TURNSTILE CAPTCHA ───────────────────────────
+let loginWidgetId = null
+let registerWidgetId = null
+
+window.onloadTurnstileCallback = function () {
+  if (typeof turnstile !== 'undefined') {
+    const loginEl = document.getElementById('turnstile-login')
+    const registerEl = document.getElementById('turnstile-register')
+    if (loginEl) {
+      loginWidgetId = turnstile.render('#turnstile-login', {
+        sitekey: '0x4AAAAAADvo-liVu4tQGdxY',
+        theme: 'dark'
+      })
+    }
+    if (registerEl) {
+      registerWidgetId = turnstile.render('#turnstile-register', {
+        sitekey: '0x4AAAAAADvo-liVu4tQGdxY',
+        theme: 'dark'
+      })
+    }
+  }
+}
+
+
 export function isLoggedIn() {
   return currentUser !== null
 }
@@ -71,6 +95,11 @@ export function switchAuthTab(tab) {
   const loginTab = document.getElementById('authTabLogin')
   const registerTab = document.getElementById('authTabRegister')
 
+  if (typeof turnstile !== 'undefined') {
+    if (loginWidgetId !== null) turnstile.reset(loginWidgetId)
+    if (registerWidgetId !== null) turnstile.reset(registerWidgetId)
+  }
+
   if (tab === 'login') {
     if (loginForm) loginForm.style.display = 'block'
     if (registerForm) registerForm.style.display = 'none'
@@ -105,10 +134,30 @@ export async function handleLogin(e) {
     return
   }
 
+  const token = typeof turnstile !== 'undefined' ? turnstile.getResponse(loginWidgetId) : ''
+  if (!token) {
+    showToast('❌ Mohon selesaikan Captcha terlebih dahulu.')
+    return
+  }
+
   submitBtn.disabled = true
   submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...'
 
   try {
+    // Verify Turnstile token with backend
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const backendUrl = isLocal ? 'http://localhost:5000' : 'https://icirenidenem.vercel.app';
+    const verifyRes = await fetch(`${backendUrl}/api/turnstile/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyData.success) {
+      if (typeof turnstile !== 'undefined' && loginWidgetId !== null) turnstile.reset(loginWidgetId)
+      throw new Error(verifyData.error || 'Verifikasi Captcha gagal.');
+    }
+
     if (supabaseClient) {
       const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password })
       if (error) throw error
@@ -130,6 +179,7 @@ export async function handleLogin(e) {
     showToast('✅ Login berhasil! Selamat datang, ' + currentUser.name)
     setTimeout(() => navigateTo('home'), 1000)
   } catch (err) {
+    if (typeof turnstile !== 'undefined' && loginWidgetId !== null) turnstile.reset(loginWidgetId)
     showToast('❌ ' + (err.message || 'Login gagal. Coba lagi.'))
   } finally {
     submitBtn.disabled = false
@@ -164,10 +214,30 @@ export async function handleRegister(e) {
     return
   }
 
+  const token = typeof turnstile !== 'undefined' ? turnstile.getResponse(registerWidgetId) : ''
+  if (!token) {
+    showToast('❌ Mohon selesaikan Captcha terlebih dahulu.')
+    return
+  }
+
   submitBtn.disabled = true
   submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...'
 
   try {
+    // Verify Turnstile token with backend
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const backendUrl = isLocal ? 'http://localhost:5000' : 'https://icirenidenem.vercel.app';
+    const verifyRes = await fetch(`${backendUrl}/api/turnstile/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyData.success) {
+      if (typeof turnstile !== 'undefined' && registerWidgetId !== null) turnstile.reset(registerWidgetId)
+      throw new Error(verifyData.error || 'Verifikasi Captcha gagal.');
+    }
+
     if (supabaseClient) {
       const { data, error } = await supabaseClient.auth.signUp({
         email, password,
@@ -190,6 +260,7 @@ export async function handleRegister(e) {
       setTimeout(() => navigateTo('home'), 1000)
     }
   } catch (err) {
+    if (typeof turnstile !== 'undefined' && registerWidgetId !== null) turnstile.reset(registerWidgetId)
     showToast('❌ ' + (err.message || 'Registrasi gagal. Coba lagi.'))
   } finally {
     submitBtn.disabled = false

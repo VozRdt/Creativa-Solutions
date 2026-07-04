@@ -229,6 +229,9 @@
                                 <button type="button" class="password-toggle" id="toggleLoginPassword" onclick="window._togglePassword('loginPassword','toggleLoginPassword')"><i class="fas fa-eye"></i></button>
                             </div>
                         </div>
+                        <div class="form-group" style="display: flex; justify-content: center; margin-top: 1rem; margin-bottom: 1rem;">
+                            <div id="turnstile-login"></div>
+                        </div>
                         <button type="submit" class="btn btn-primary auth-submit-btn" id="loginSubmitBtn"><i class="fas fa-sign-in-alt"></i> Masuk Sekarang</button>
                         <p class="auth-switch">Belum punya akun? <a href="#" id="switchToRegister" onclick="window._switchAuthTab('register'); return false;">Daftar sekarang</a></p>
                     </form>
@@ -261,6 +264,9 @@
                                 <input type="checkbox" id="registerAgreeTerms" required>
                                 <span>Saya setuju dengan <a href="#" class="auth-link" onclick="window._showTermsModal('terms'); return false;">Syarat &amp; Ketentuan</a> serta <a href="#" class="auth-link" onclick="window._showTermsModal('privacy'); return false;">Kebijakan Privasi</a></span>
                             </label>
+                        </div>
+                        <div class="form-group" style="display: flex; justify-content: center; margin-top: 1rem; margin-bottom: 1rem;">
+                            <div id="turnstile-register"></div>
                         </div>
                         <button type="submit" class="btn btn-primary auth-submit-btn" id="registerSubmitBtn"><i class="fas fa-user-plus"></i> Daftar Sekarang</button>
                         <p class="auth-switch">Sudah punya akun? <a href="#" id="switchToLogin" onclick="window._switchAuthTab('login'); return false;">Masuk di sini</a></p>
@@ -788,6 +794,9 @@
     <script type="text/javascript"
             src="https://app.sandbox.midtrans.com/snap/snap.js"
             data-client-key="Mid-client-QsHixgl3IH6HJ1k1"></script>
+
+    <!-- Cloudflare Turnstile -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback" async defer></script>
 
     <script type="module" src="/src/main.js"></script>
 </body>
