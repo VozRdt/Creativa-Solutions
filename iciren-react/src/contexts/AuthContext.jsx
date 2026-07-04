@@ -67,16 +67,21 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const signIn = async (email, password) => {
-    return supabase.auth.signInWithPassword({ email, password });
+  const signIn = async (email, password, captchaToken) => {
+    return supabase.auth.signInWithPassword({ 
+      email, 
+      password,
+      options: { captchaToken }
+    });
   };
 
-  const signUp = async (email, password, name) => {
+  const signUp = async (email, password, name, captchaToken) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { name }
+        data: { name },
+        captchaToken
       }
     });
     
