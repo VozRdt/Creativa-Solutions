@@ -10,15 +10,15 @@ export default function AuthPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { signIn, signUp, user } = useAuth();
-  
+
   const initialTab = searchParams.get('tab') === 'register' ? 'register' : 'login';
   const [activeTab, setActiveTab] = useState(initialTab);
-  
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [captchaToken, setCaptchaToken] = useState(null);
@@ -73,7 +73,7 @@ export default function AuthPage() {
               <h2 className="auth-title">Selamat Datang</h2>
               <p className="auth-subtitle">Masuk atau daftar untuk mulai jual beli ide kreatif</p>
             </div>
-            
+
             <div className="auth-tabs">
               <button className={`auth-tab ${activeTab === 'login' ? 'active' : ''}`} onClick={() => setActiveTab('login')}>
                 <i className="fas fa-sign-in-alt"></i> Masuk
@@ -139,7 +139,7 @@ export default function AuthPage() {
               <button type="submit" className="btn btn-primary auth-submit-btn"><i className="fas fa-user-plus"></i> Daftar Sekarang</button>
               <p className="auth-switch">Sudah punya akun? <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('login'); }}>Masuk di sini</a></p>
             </form>
-            
+
           </div>
           <div className="auth-decoration">
             <div className="auth-deco-card"><div className="auth-deco-icon"><i className="fas fa-lightbulb"></i></div><h3>Jual Ide Kreatifmu</h3><p>Ubah ide brilian menjadi penghasilan. Bergabung dengan 850+ kreator aktif di iCiren iDe'nem.</p></div>
