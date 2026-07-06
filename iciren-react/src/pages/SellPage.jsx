@@ -126,7 +126,7 @@ export default function SellPage() {
                     <textarea id="ideaContent" className="form-input form-textarea" rows="6" placeholder="Tuliskan detail rahasia idemu di sini (script, konsep detail, hashtag rahasia, dll)..." required value={formData.content} onChange={handleChange}></textarea>
                   </div>
                   <div style={{ marginBottom: '1rem', padding: '0.8rem', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '8px', fontSize: '0.85rem', color: '#FCD34D' }}>
-                    <i className="fas fa-info-circle"></i> <strong>Perhatian:</strong> Terdapat potongan <strong>Service Fee sebesar 15%</strong> dari harga ide untuk pemeliharaan platform saat idemu terjual.
+                    <i className="fas fa-info-circle"></i> <strong>Perhatian:</strong> Terdapat potongan <strong>Service Fee sebesar 15%</strong> dari harga ide untuk pemeliharaan platform saat idemu disetujui oleh admin.
                   </div>
                   <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
                     <i className="fas fa-paper-plane"></i> {loading ? 'Submitting...' : 'Submit Ide Sekarang'}
@@ -135,8 +135,8 @@ export default function SellPage() {
               </div>
             </div>
             <div className="sell-benefits">
-              <div className="sell-benefit-card"><div className="sb-icon"><i className="fas fa-money-bill-wave"></i></div><h3>Penghasilan Menarik</h3><p>Dapatkan 85% dari setiap penjualan ideamu langsung ke rekeningmu.</p></div>
-              <div className="sell-benefit-card"><div className="sb-icon"><i className="fas fa-users"></i></div><h3>Jangkauan Luas</h3><p>Idemu akan dilihat oleh ribuan kreator aktif setiap harinya.</p></div>
+              <div className="sell-benefit-card"><div className="sb-icon"><i className="fas fa-money-bill-wave"></i></div><h3>Penghasilan Menarik</h3><p>Dapatkan 85% dari harga ideamu langsung masuk ke saldo akunmu setelah disetujui admin.</p></div>
+              <div className="sell-benefit-card"><div className="sb-icon"><i className="fas fa-users"></i></div><h3>Jangkauan Luas</h3><p>Idemu akan dilihat oleh ribuan kreator aktif setelah tayang.</p></div>
               <div className="sell-benefit-card"><div className="sb-icon"><i className="fas fa-star"></i></div><h3>Bangun Reputasi</h3><p>Kumpulkan rating dan review positif untuk meningkatkan kepercayaan.</p></div>
               <div className="sell-benefit-card"><div className="sb-icon"><i className="fas fa-chart-bar"></i></div><h3>Statistik Lengkap</h3><p>Pantau performa penjualan idemu secara real-time dengan dashboard.</p></div>
             </div>

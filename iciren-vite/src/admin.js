@@ -158,19 +158,6 @@ async function updateIdeaStatus(id, status) {
     try {
       const { error } = await supabaseClient.from('ideas').update({ status, admin_note: note }).eq('id', id)
       if (error) throw error
-
-      const idea = adminIdeas.find(i => i.id === id)
-      if (idea) {
-        const notifType = status === 'approved' ? 'idea_approved' : 'idea_rejected'
-        const notifTitle = status === 'approved' ? '🎉 Ide Disetujui!' : '❌ Ide Ditolak'
-        const notifMsg = status === 'approved'
-          ? `Ide "${idea.title}" telah disetujui dan sekarang tampil di marketplace!`
-          : `Ide "${idea.title}" ditolak. ${note ? 'Catatan: ' + note : 'Silakan revisi dan submit ulang.'}`
-
-        await supabaseClient.from('notifications').insert({
-          user_id: idea.user_id, type: notifType, title: notifTitle, message: notifMsg,
-        })
-      }
     } catch (e) {
       console.warn('Update status error:', e)
     }

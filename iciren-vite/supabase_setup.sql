@@ -456,35 +456,230 @@ BEGIN
   INSERT INTO purchases (user_id, idea_id, idea_title, idea_category, idea_price, idea_desc, idea_emoji, idea_rating, idea_views)
   VALUES (
     v_user_id, v_idea.id, v_idea.title, v_idea.category, v_idea.price,
+  idea_id UUID REFERENCES ideas(id) ON DELETE SET NULL,
+  amount INTEGER NOT NULL CHECK (amount >= 0),
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending','processing','completed','failed','refunded','expired')),
+  payment_method TEXT DEFAULT '',
+  payment_gateway TEXT DEFAULT '',          -- 'midtrans', 'xendit', etc.
+  gateway_transaction_id TEXT DEFAULT '',   -- ID dari payment gateway
+  gateway_order_id TEXT DEFAULT '',         -- Order ID untuk gateway
+  gateway_response JSONB DEFAULT '{}',     -- Full response dari gateway
+  metadata JSONB DEFAULT '{}',             -- Data tambahan
+  paid_at TIMESTAMPTZ,
+  expired_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+
+-- User hanya bisa lihat transaksi sendiri
+DROP POLICY IF EXISTS "Users can view own transactions" ON transactions;
+CREATE POLICY "Users can view own transactions"
+  ON transactions FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- ❌ No direct INSERT/UPDATE/DELETE dari client
+-- Semua operasi transaksi harus lewat server function
+
+-- Admin bisa lihat semua transaksi
+DROP POLICY IF EXISTS "Admin can view all transactions" ON transactions;
+CREATE POLICY "Admin can view all transactions"
+  ON transactions FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles
+      WHERE profiles.id = auth.uid()
+      AND profiles.role = 'admin'
+    )
+  );
+
+-- =============================================================
+-- FUNCTION: create_payment_intent()
+-- Dipanggil dari frontend untuk memulai proses pembayaran
+-- Return: transaction_id yang akan dipakai untuk payment gateway
+-- =============================================================
+CREATE OR REPLACE FUNCTION public.create_payment_intent(
+  p_idea_id UUID
+)
+RETURNS JSON AS $$
+DECLARE
+  v_idea RECORD;
+  v_user_id UUID;
+  v_existing_purchase RECORD;
+  v_existing_pending RECORD;
+  v_transaction_id UUID;
+  v_order_id TEXT;
+BEGIN
+  -- 1. Ambil user ID dari auth session
+  v_user_id := auth.uid();
+  IF v_user_id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'Unauthorized: Silakan login terlebih dahulu.');
+  END IF;
+
+  -- 2. Cek apakah ide ada dan statusnya approved
+  SELECT * INTO v_idea FROM ideas WHERE id = p_idea_id AND status = 'approved';
+  IF NOT FOUND THEN
+    RETURN json_build_object('success', false, 'error', 'Ide tidak ditemukan atau belum disetujui.');
+  END IF;
+
+  -- 3. Cek apakah user mencoba beli ide sendiri
+  IF v_idea.user_id = v_user_id THEN
+    RETURN json_build_object('success', false, 'error', 'Kamu tidak bisa membeli ide sendiri.');
+  END IF;
+
+  -- 4. Cek apakah sudah pernah dibeli
+  SELECT * INTO v_existing_purchase FROM purchases
+    WHERE user_id = v_user_id AND idea_id = p_idea_id;
+  IF FOUND THEN
+    RETURN json_build_object('success', false, 'error', 'Kamu sudah membeli ide ini sebelumnya.');
+  END IF;
+
+  -- 5. Cek apakah ada transaksi pending yang masih valid (belum expired)
+  SELECT * INTO v_existing_pending FROM transactions
+    WHERE user_id = v_user_id
+    AND idea_id = p_idea_id
+    AND status = 'pending'
+    AND (expired_at IS NULL OR expired_at > now());
+  IF FOUND THEN
+    -- Return existing pending transaction
+    RETURN json_build_object(
+      'success', true,
+      'transaction_id', v_existing_pending.id,
+      'order_id', v_existing_pending.gateway_order_id,
+      'amount', v_existing_pending.amount,
+      'idea_title', v_idea.title,
+      'status', 'existing_pending'
+    );
+  END IF;
+
+  -- 6. Buat transaction baru
+  v_order_id := 'ICR-' || EXTRACT(EPOCH FROM now())::BIGINT || '-' || substr(gen_random_uuid()::TEXT, 1, 8);
+
+  INSERT INTO transactions (id, user_id, idea_id, amount, status, gateway_order_id, expired_at)
+  VALUES (
+    gen_random_uuid(), v_user_id, p_idea_id, v_idea.price, 'pending',
+    v_order_id, now() + INTERVAL '24 hours'
+  )
+  RETURNING id INTO v_transaction_id;
+
+  -- 7. Return data untuk payment gateway
+  RETURN json_build_object(
+    'success', true,
+    'transaction_id', v_transaction_id,
+    'order_id', v_order_id,
+    'amount', v_idea.price,
+    'idea_title', v_idea.title,
+    'idea_category', v_idea.category,
+    'idea_emoji', v_idea.emoji,
+    'idea_desc', v_idea.description,
+    'buyer_id', v_user_id,
+    'seller_id', v_idea.user_id,
+    'status', 'created'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =============================================================
+-- FUNCTION: process_purchase()
+-- Dipanggil SETELAH payment terverifikasi (dari webhook/server)
+-- SECURITY DEFINER = berjalan dengan privilege owner, bukan user
+-- =============================================================
+CREATE OR REPLACE FUNCTION public.process_purchase(
+  p_transaction_id UUID,
+  p_payment_method TEXT DEFAULT 'manual',
+  p_gateway TEXT DEFAULT '',
+  p_gateway_txn_id TEXT DEFAULT ''
+)
+RETURNS JSON AS $$
+DECLARE
+  v_txn RECORD;
+  v_idea RECORD;
+  v_purchase_id UUID;
+  v_user_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+  IF v_user_id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'Unauthorized.');
+  END IF;
+
+  -- 1. Ambil transaksi
+  SELECT * INTO v_txn FROM transactions
+    WHERE id = p_transaction_id AND user_id = v_user_id;
+  IF NOT FOUND THEN
+    RETURN json_build_object('success', false, 'error', 'Transaksi tidak ditemukan.');
+  END IF;
+
+  -- 2. Cek status transaksi
+  IF v_txn.status = 'completed' THEN
+    RETURN json_build_object('success', false, 'error', 'Transaksi sudah diproses sebelumnya.');
+  END IF;
+
+  IF v_txn.status NOT IN ('pending', 'processing') THEN
+    RETURN json_build_object('success', false, 'error', 'Status transaksi tidak valid: ' || v_txn.status);
+  END IF;
+
+  -- 3. Cek expired
+  IF v_txn.expired_at IS NOT NULL AND v_txn.expired_at < now() THEN
+    UPDATE transactions SET status = 'expired', updated_at = now() WHERE id = p_transaction_id;
+    RETURN json_build_object('success', false, 'error', 'Transaksi sudah expired. Silakan buat transaksi baru.');
+  END IF;
+
+  -- 4. Ambil data ide
+  SELECT * INTO v_idea FROM ideas WHERE id = v_txn.idea_id;
+  IF NOT FOUND THEN
+    RETURN json_build_object('success', false, 'error', 'Ide tidak ditemukan.');
+  END IF;
+
+  -- 5. Double-check: belum pernah dibeli
+  IF EXISTS (SELECT 1 FROM purchases WHERE user_id = v_user_id AND idea_id = v_txn.idea_id) THEN
+    UPDATE transactions SET status = 'failed', updated_at = now() WHERE id = p_transaction_id;
+    RETURN json_build_object('success', false, 'error', 'Ide sudah pernah dibeli.');
+  END IF;
+
+  -- 6. UPDATE transaksi → completed
+  UPDATE transactions SET
+    status = 'completed',
+    payment_method = p_payment_method,
+    payment_gateway = p_gateway,
+    gateway_transaction_id = p_gateway_txn_id,
+    paid_at = now(),
+    updated_at = now()
+  WHERE id = p_transaction_id;
+
+  -- 7. INSERT ke purchases (via SECURITY DEFINER, bypass RLS)
+  INSERT INTO purchases (user_id, idea_id, idea_title, idea_category, idea_price, idea_desc, idea_emoji, idea_rating, idea_views)
+  VALUES (
+    v_user_id, v_idea.id, v_idea.title, v_idea.category, v_idea.price,
     v_idea.description, COALESCE(v_idea.emoji, '💡'),
     COALESCE(v_idea.rating, 0), COALESCE(v_idea.views, 0)
   )
   RETURNING id INTO v_purchase_id;
 
-  -- 8. Update seller stats
-  UPDATE profiles SET
-    total_sales = total_sales + 1,
-    total_earnings = total_earnings + v_idea.price,
-    updated_at = now()
-  WHERE id = v_idea.user_id;
+  -- 8. Update seller stats (DISABLED: seller already paid upon admin approval)
+  -- UPDATE profiles SET
+  --   total_sales = total_sales + 1,
+  --   total_earnings = total_earnings + v_idea.price,
+  --   updated_at = now()
+  -- WHERE id = v_idea.user_id;
 
   
-  -- 9. Kirim notifikasi ke seller
-  INSERT INTO notifications (user_id, type, title, message)
-  VALUES (
-    v_idea.user_id,
-    'idea_sold',
-    '?? Ide Terjual!',
-    'Ide "' || v_idea.title || '" telah dibeli! Penghasilan +Rp ' || v_idea.price || '.'
-  );
+  -- 9. Kirim notifikasi ke seller (DISABLED: handled on admin approval)
+  -- INSERT INTO notifications (user_id, type, title, message)
+  -- VALUES (
+  --   v_idea.user_id,
+  --   'idea_sold',
+  --   '?? Ide Terjual!',
+  --   'Ide "' || v_idea.title || '" telah dibeli! Penghasilan +Rp ' || v_idea.price || '.'
+  -- );
 
   -- 10. Kirim notifikasi ke buyer
   INSERT INTO notifications (user_id, type, title, message)
   VALUES (
     v_user_id,
     'purchase',
-    '?? Pembelian Berhasil!',
-    'Kamu berhasil membeli ide "' || v_idea.title || '". Cek di Ide Saya ? Dibeli.'
+    '🎉 Pembelian Berhasil!',
+    'Kamu berhasil membeli ide "' || v_idea.title || '". Cek di Ide Saya → Dibeli.'
   );
 
   RETURN json_build_object(
@@ -542,3 +737,54 @@ DROP POLICY IF EXISTS "Anyone can delete their own avatar." ON storage.objects;
 CREATE POLICY "Anyone can delete their own avatar." 
   ON storage.objects FOR DELETE 
   USING ( bucket_id = 'avatars' AND auth.uid() = owner );
+
+-- =============================================================
+-- FUNCTION & TRIGGER: handle_idea_status_change()
+-- Otomatis menambah saldo & sales penjual saat status disetujui (Approved)
+-- dan mengirimkan notifikasi untuk Approved / Rejected.
+-- =============================================================
+CREATE OR REPLACE FUNCTION public.handle_idea_status_change()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_earnings INTEGER;
+BEGIN
+  IF NEW.status = 'approved' AND (OLD.status IS NULL OR OLD.status != 'approved') THEN
+    -- Hitung saldo masuk setelah service fee 15%
+    v_earnings := NEW.price - (NEW.price * 15 / 100);
+    
+    -- Update saldo & total penjualan di profil kreator/penjual
+    UPDATE public.profiles
+    SET 
+      total_earnings = COALESCE(total_earnings, 0) + v_earnings,
+      total_sales = COALESCE(total_sales, 0) + 1,
+      updated_at = now()
+    WHERE id = NEW.user_id;
+
+    -- Kirim notifikasi sukses disetujui & saldo masuk
+    INSERT INTO public.notifications (user_id, type, title, message)
+    VALUES (
+      NEW.user_id,
+      'idea_approved',
+      '🎉 Ide Disetujui & Saldo Masuk!',
+      'Ide "' || NEW.title || '" telah disetujui oleh admin! Saldo sebesar Rp ' || to_char(v_earnings, 'FM999,999,999') || ' (setelah potongan service fee 15%) telah masuk ke akun Anda.'
+    );
+  ELSIF NEW.status = 'rejected' AND (OLD.status IS NULL OR OLD.status != 'rejected') THEN
+    -- Kirim notifikasi penolakan ide
+    INSERT INTO public.notifications (user_id, type, title, message)
+    VALUES (
+      NEW.user_id,
+      'idea_rejected',
+      '❌ Ide Ditolak',
+      'Ide "' || NEW.title || '" ditolak. ' || COALESCE(NEW.admin_note, 'Silakan revisi dan submit ulang.')
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Buat trigger setelah status ide berubah
+DROP TRIGGER IF EXISTS on_idea_status_change ON public.ideas;
+CREATE TRIGGER on_idea_status_change
+  AFTER UPDATE ON public.ideas
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_idea_status_change();
